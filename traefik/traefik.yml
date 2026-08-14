@@ -1,0 +1,55 @@
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+log: 
+  level: DEBUG
+  format: common
+accessLog:
+  filePath: /var/log/traefik/access.json
+  format: json
+  fields:
+    # Keep all the fields by default
+    defaultMode: keep
+    headers:
+      # Keep all the headers by default
+      defaultMode: keep
+
+  
+api:
+  dashboard: true
+  debug: true
+entryPoints:
+  http:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: https
+          scheme: https
+  https:
+    address: ":443"
+  ldaps:
+    address: ":636"
+serversTransport:
+  insecureSkipVerify: true
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+
+certificatesResolvers:
+  cloudflare:
+    acme:
+      # Provided from ENV VAR
+      # email: <email
+      storage: acme.json
+        # Provided from ENV VAR
+     # caServer: https://acme-v02.api.letsencrypt.org/directory # prod (default)
+     # caServer: https://acme-staging-v02.api.letsencrypt.org/directory # staging
+      dnsChallenge:
+        provider: cloudflare
+        disablePropagationCheck: true # uncomment this if you have issues pulling certificates through cloudflare, By setting this flag to true disables the need to wait for the propagation of the TXT record to all authoritative name servers.
+        delayBeforeCheck: 60s # uncomment along with disablePropagationCheck if needed to ensure the TXT record is ready before verification is attempted 
+        resolvers:
+          - "1.1.1.1:53"
+          - "1.0.0.1:53"

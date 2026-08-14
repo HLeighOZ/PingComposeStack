@@ -1,0 +1,235 @@
+name: traefik-ping
+services:
+  traefik:
+    image: traefik:v3.7.10
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "636:636"
+    environment:
+      CF_DNS_API_TOKEN_FILE: /run/secrets/cf_api_token # Mount CF API Token for cloudflare
+      TRAEFIK_DASHBOARD_CREDENTIALS: ${TRAEFIK_DASHBOARD_CREDENTIALS}
+     
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/traefik.yml:ro
+      - ./traefik/acme.json:/acme.json
+      - ./traefik/logs:/var/log/traefik
+    secrets:
+      - cf_api_token
+    env_file: .env
+
+    labels:
+      - "traefik.tls.stores.default.defaultgeneratedcert.resolver=cloudflare"
+      - "traefik.tls.stores.default.defaultgeneratedcert.domain.main=${DNS_DOMAIN}"
+      - "traefik.tls.stores.default.defaultgeneratedcert.domain.sans=*.${DNS_DOMAIN}"
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=http"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${DNS_DOMAIN}`)"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_CREDENTIALS}"
+      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.middlewares.secure-proto.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.traefik.middlewares=traefik-https-redirect"
+      - "traefik.http.routers.traefik-secure.entrypoints=https"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.${DNS_DOMAIN}`)"
+      - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"
+      - "traefik.http.routers.traefik-secure.tls=true"
+      - "traefik.http.routers.traefik-secure.tls.certresolver=cloudflare"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].main=${DNS_DOMAIN}"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.${DNS_DOMAIN}"
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+
+
+  pingdirectory:
+    image: pingidentity/pingdirectory
+    hostname: pingdirectory
+    container_name: pingdirectory
+    env_file:
+      - ./ping/devops-crds.env
+      - .env
+    labels:  
+      - "traefik.enable=true"
+      - "traefik.http.routers.pingdirectory.entrypoints=https"
+      - "traefik.http.routers.pingdirectory.rule=Host(`pd.${DNS_DOMAIN}`)"
+      - "traefik.http.routers.pingdirectory.tls=true"
+      - "traefik.http.services.pingdirectory.loadbalancer.server.port=1443"
+      - "traefik.http.services.pingdirectory.loadbalancer.server.scheme=https" 
+      - "traefik.tcp.routers.ldaps-srv.entrypoints=ldaps"
+      - "traefik.tcp.routers.ldaps-srv.tls=true"
+      - "traefik.tcp.routers.ldaps-srv.rule=HostSNI(`pd.${DNS_DOMAIN}`)"
+      - "traefik.tcp.routers.ldaps-srv.rule=HostSNI(`*`)"
+      - "traefik.tcp.routers.ldaps-srv.service=ldaps-srv"
+      - "traefik.tcp.services.ldaps-srv.loadbalancer.server.port=1389"
+
+    environment:
+
+        - MAKELDIF_USERS=1000
+    volumes:
+      - ./profiles/pingdirectory:/opt/in:ro
+      - pingdirectory-out:/opt/out    
+
+    networks:
+      - proxy
+
+
+  pingdataconsole:
+    image: pingidentity/pingdataconsole
+    hostname: pingdataconsole
+    container_name: pingdataconsole
+    env_file:
+      - ./ping/devops-crds.env
+      - .env
+    labels:  
+      - "traefik.enable=true"
+      - "traefik.http.routers.pingdataconsole.entrypoints=https"
+      - "traefik.http.routers.pingdataconsole.rule=Host(`pdc.${DNS_DOMAIN}`)"
+      - "traefik.http.routers.pingdataconsole.tls=true"
+      - "traefik.http.services.pingdataconsole.loadbalancer.server.port=1443"
+      - "traefik.http.services.pingdataconsole.loadbalancer.server.scheme=https"  
+    networks:
+      - proxy
+
+  pingaccess:
+    image: pingidentity/pingaccess
+    hostname: pingaccess
+    container_name: pingaccess
+    depends_on:
+      - pingfederate-admin
+    command: wait-for pingfederate-admin:9999 -t 600 -- entrypoint.sh start-server
+    env_file:
+      - ./ping/devops-crds.env
+      - .env
+    environment:
+      - PA_LOG_LEVEL=DEBUG
+      - OPERATIONAL_MODE=STANDALONE  
+      - PF_ENGINE_PRIVATE_HOSTNAME=pingfederate
+
+    labels:  
+      - "traefik.enable=true"
+      - "traefik.http.routers.pa-admin.entrypoints=https"
+      - "traefik.http.routers.pa-admin.rule=Host(`pa-admin.${DNS_DOMAIN}`)"
+      - "traefik.http.routers.pa-admin.tls=true"
+      - "traefik.http.routers.pa-admin.service=pa-admin"
+      - "traefik.http.services.pa-admin.loadbalancer.server.port=9000"
+      - "traefik.http.services.pa-admin.loadbalancer.server.scheme=https"  
+      - "traefik.http.routers.pa-engine.entrypoints=https"
+      - "traefik.http.routers.pa-engine.rule=Host(`pa.${DNS_DOMAIN}`)"
+      - "traefik.http.routers.pa-engine.tls=true"
+      - "traefik.http.routers.pa-engine.service=pa-engine"
+      - "traefik.http.services.pa-engine.loadbalancer.server.port=3000"
+      - "traefik.http.services.pa-engine.loadbalancer.server.scheme=https" 
+      - "traefik.http.routers.myapp.entrypoints=https"
+      - "traefik.http.routers.myapp.rule=Host(`${APP_PUBLIC_HOSTNAME}`)"
+      - "traefik.http.routers.myapp.tls=true"
+      - "traefik.http.routers.myapp.service=myapp"
+      - "traefik.http.services.myapp.loadbalancer.server.port=3000"
+      - "traefik.http.services.myapp.loadbalancer.server.scheme=https" 
+    volumes:
+      - ./profiles/pingaccess:/opt/in:ro  
+       - pingaccess-admin-out:/opt/out
+    networks:
+      - proxy      
+
+  pingfederate-admin:
+    image: pingidentity/pingfederate
+    hostname: pingfederate-admin
+    container_name: pingfederate-admin
+    depends_on:
+      - pingdirectory
+    command: wait-for pingdirectory:1389 -t 600 -- entrypoint.sh start-server
+    env_file:
+      - ./ping/devops-crds.env
+      - .env
+    environment:
+      - OPERATIONAL_MODE=CLUSTERED_CONSOLE
+      - CLUSTER_NAME=pf
+      - DNS_QUERY_LOCATION=pingfederate-admin,pingfederate
+      - DNS_RECORD_TYPE=A
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pingfederate-admin.entrypoints=https"
+      - "traefik.http.routers.pingfederate-admin.rule=Host(`pf-admin.${DNS_DOMAIN}`)"
+      - "traefik.http.routers.pingfederate-admin.tls=true"
+      - "traefik.http.services.pingfederate-admin.loadbalancer.server.port=9999"
+      - "traefik.http.services.pingfederate-admin.loadbalancer.server.scheme=https"
+    networks:
+      - proxy
+    volumes:
+      - pingfederate-admin-out:/opt/out
+      - ./profiles/pingfederate:/opt/in:ro
+
+  pingfederate:
+    image: pingidentity/pingfederate # ${PING_IDENTITY_DEVOPS_TAG}
+    hostname: pingfederate-engine
+   
+    depends_on:
+      - pingfederate-admin
+    command: wait-for pingfederate-admin:9999 -t 600 -- entrypoint.sh start-server
+    # You may need to comment this tmpfs line if you run containers on windows
+    env_file:
+         - ./ping/devops-crds.env
+         - .env
+    deploy:
+      mode: replicated
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    environment:
+    
+      - OPERATIONAL_MODE=CLUSTERED_ENGINE
+      - CLUSTER_NAME=pf
+      - DNS_QUERY_LOCATION=pingfederate-admin,pingfederate
+      - DNS_RECORD_TYPE=A
+     
+    labels:  
+      - "traefik.enable=true"
+      - "traefik.http.routers.pingfederate.entrypoints=https"
+      - "traefik.http.routers.pingfederate.rule=Host(`pf.${DNS_DOMAIN}`)"
+      - "traefik.http.routers.pingfederate.tls=true"
+   
+      - "traefik.http.services.pingfederate.loadbalancer.server.port=9031"
+      - "traefik.http.services.pingfederate.loadbalancer.server.scheme=https"
+    volumes:
+       - ./profiles/pingfederate:/opt/in:ro
+    networks:
+      - proxy
+
+  echo-server: 
+        image: ealen/echo-server:0.9.2
+        container_name: echo-server
+        labels:  
+          - "traefik.enable=true"
+          - "traefik.http.routers.echo-server.entrypoints=https"
+          - "traefik.http.routers.echo-server.rule=Host(`echo.${DNS_DOMAIN}`)"
+          - "traefik.http.routers.echo-server.tls=true"
+          - "traefik.http.services.echo-server.loadbalancer.server.port=80"
+          - "traefik.http.services.echo-server.loadbalancer.server.scheme=http"
+        networks:
+          - proxy      
+
+  
+
+volumes:
+  pingfederate-admin-out:
+  pingdirectory-out:
+  pingaccess-admin-out:
+  
+secrets:
+  cf_api_token:
+    file: ./traefik/cf_api_token.txt
+
+networks:
+  proxy:
+    driver: bridge
+    name: proxy

@@ -12,37 +12,38 @@ services:
       - "80:80"
       - "443:443"
       - "636:636"
+    env_file: 
+    - .env  
     environment:
       CF_DNS_API_TOKEN_FILE: /run/secrets/cf_api_token # Mount CF API Token for cloudflare
-      TRAEFIK_DASHBOARD_CREDENTIALS: ${TRAEFIK_DASHBOARD_CREDENTIALS}
-     
+      TRAEFIK_DASHBOARD_CREDENTIALS: ${TRAEFIK_DASHBOARD_CREDENTIALS}  # Read from .env file
+    
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/traefik.yml:ro
-      - ./traefik/acme.json:/acme.json
-      - ./traefik/logs:/var/log/traefik
+      - ./traefik/acme.json:/acme.json   # populated with generate wildcard cert
+      - ./traefik/logs:/var/log/traefik   # Logging output for troubleshooting
     secrets:
-      - cf_api_token
-    env_file: .env
+      - cf_api_token  # secret created from ./traefik/cf_api_token.txt file & auto mounted to container /run/secrets
 
     labels:
-      - "traefik.tls.stores.default.defaultgeneratedcert.resolver=cloudflare"
+      - "traefik.tls.stores.default.defaultgeneratedcert.resolver=cloudflare"      # Setup default cert to be Let's Encrypt wildcard - for use when terminating PD LDAPS connections
       - "traefik.tls.stores.default.defaultgeneratedcert.domain.main=${DNS_DOMAIN}"
       - "traefik.tls.stores.default.defaultgeneratedcert.domain.sans=*.${DNS_DOMAIN}"
       - "traefik.enable=true"
-      - "traefik.http.routers.traefik.entrypoints=http"
+      - "traefik.http.routers.traefik.entrypoints=http"  # Enable traefik dashboard - with redirect to https
       - "traefik.http.routers.traefik.rule=Host(`traefik.${DNS_DOMAIN}`)"
-      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_CREDENTIALS}"
-      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"
-      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_CREDENTIALS}" # setup basic auth for Traefik Dashboard
+      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"  
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"    # Force headers for PA and PF to be https - required for proper operation of PA and PF
       - "traefik.http.middlewares.secure-proto.headers.customrequestheaders.X-Forwarded-Proto=https"
       - "traefik.http.routers.traefik.middlewares=traefik-https-redirect"
       - "traefik.http.routers.traefik-secure.entrypoints=https"
       - "traefik.http.routers.traefik-secure.rule=Host(`traefik.${DNS_DOMAIN}`)"
-      - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"
+      - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"    # Link Basic auth to Traefik Dashboard
       - "traefik.http.routers.traefik-secure.tls=true"
-      - "traefik.http.routers.traefik-secure.tls.certresolver=cloudflare"
+      - "traefik.http.routers.traefik-secure.tls.certresolver=cloudflare"  # Key values to getting Let's encrypt wild card cert generated and used for Traefik and LDAPS termination
       - "traefik.http.routers.traefik-secure.tls.domains[0].main=${DNS_DOMAIN}"
       - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.${DNS_DOMAIN}"
       - "traefik.http.routers.traefik-secure.service=api@internal"
@@ -56,7 +57,7 @@ services:
       - ./ping/devops-crds.env
       - .env
     labels:  
-      - "traefik.enable=true"
+      - "traefik.enable=true" # Enable Traefik routing for this service - with HTTPS and LDAPS Termination to PD LDAP 1389 internally
       - "traefik.http.routers.pingdirectory.entrypoints=https"
       - "traefik.http.routers.pingdirectory.rule=Host(`pd.${DNS_DOMAIN}`)"
       - "traefik.http.routers.pingdirectory.tls=true"
@@ -68,19 +69,16 @@ services:
       - "traefik.tcp.routers.ldaps-srv.rule=HostSNI(`*`)"
       - "traefik.tcp.routers.ldaps-srv.service=ldaps-srv"
       - "traefik.tcp.services.ldaps-srv.loadbalancer.server.port=1389"
-
     environment:
-
-        - MAKELDIF_USERS=1000
+      - MAKELDIF_USERS=1000  # create 1000 sample users in PD for testing - can be removed if not needed
     volumes:
-      - ./profiles/pingdirectory:/opt/in:ro
-      - pingdirectory-out:/opt/out    
-
+      - ./profiles/pingdirectory:/opt/in:ro  # Mount the profile for PD to be used for initial configuration
+      - pingdirectory-out:/opt/out    # Mount the output directory for PD to be used for persisting data and configuration
     networks:
       - proxy
 
 
-  pingdataconsole:
+  pingdataconsole:   # PD Console GUI
     image: pingidentity/pingdataconsole
     hostname: pingdataconsole
     container_name: pingdataconsole
@@ -88,12 +86,14 @@ services:
       - ./ping/devops-crds.env
       - .env
     labels:  
-      - "traefik.enable=true"
+      - "traefik.enable=true"  # Expose pdc via Trafik - via HTTPS Termination
       - "traefik.http.routers.pingdataconsole.entrypoints=https"
       - "traefik.http.routers.pingdataconsole.rule=Host(`pdc.${DNS_DOMAIN}`)"
       - "traefik.http.routers.pingdataconsole.tls=true"
       - "traefik.http.services.pingdataconsole.loadbalancer.server.port=1443"
       - "traefik.http.services.pingdataconsole.loadbalancer.server.scheme=https"  
+    volumes:
+      - ./profiles/pingddataconsole:/opt/in:ro  # Mount the profile for PDC so that LDAP Server pre-populated  
     networks:
       - proxy
 
@@ -101,7 +101,7 @@ services:
     image: pingidentity/pingaccess
     hostname: pingaccess
     container_name: pingaccess
-    depends_on:
+    depends_on:  # Have pingaccess standalone wait for pingfederate-admin to be up and running before starting
       - pingfederate-admin
     command: wait-for pingfederate-admin:9999 -t 600 -- entrypoint.sh start-server
     env_file:
@@ -110,10 +110,10 @@ services:
     environment:
       - PA_LOG_LEVEL=DEBUG
       - OPERATIONAL_MODE=STANDALONE  
-      - PF_ENGINE_PRIVATE_HOSTNAME=pingfederate
+      - PF_ENGINE_PRIVATE_HOSTNAME=pingfederate  # Overwrite the default value for PF_ENGINE_PRIVATE_HOSTNAME to point to the pingfederate container name - required for proper operation of PA and PF
 
     labels:  
-      - "traefik.enable=true"
+      - "traefik.enable=true"  # Setup Traefik for PA - with both Admin Console and sample application engine exposed via HTTPS Termination
       - "traefik.http.routers.pa-admin.entrypoints=https"
       - "traefik.http.routers.pa-admin.rule=Host(`pa-admin.${DNS_DOMAIN}`)"
       - "traefik.http.routers.pa-admin.tls=true"
@@ -134,7 +134,7 @@ services:
       - "traefik.http.services.myapp.loadbalancer.server.scheme=https" 
     volumes:
       - ./profiles/pingaccess:/opt/in:ro  
-       - pingaccess-admin-out:/opt/out
+      - pingaccess-admin-out:/opt/out
     networks:
       - proxy      
 
@@ -224,7 +224,7 @@ volumes:
   pingfederate-admin-out:
   pingdirectory-out:
   pingaccess-admin-out:
-  
+
 secrets:
   cf_api_token:
     file: ./traefik/cf_api_token.txt

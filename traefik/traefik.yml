@@ -40,10 +40,10 @@ providers:
 certificatesResolvers:
   cloudflare:
     acme:
-      # Provided from ENV VAR
-      # email: <email
+      # Provided from ENV VAR in .env file
+      # email: <email>
       storage: acme.json
-        # Provided from ENV VAR
+        # Provided from ENV VAR in .env file
      # caServer: https://acme-v02.api.letsencrypt.org/directory # prod (default)
      # caServer: https://acme-staging-v02.api.letsencrypt.org/directory # staging
       dnsChallenge:

@@ -93,7 +93,7 @@ services:
       - "traefik.http.services.pingdataconsole.loadbalancer.server.port=1443"
       - "traefik.http.services.pingdataconsole.loadbalancer.server.scheme=https"  
     volumes:
-      - ./profiles/pingddataconsole:/opt/in:ro  # Mount the profile for PDC so that LDAP Server pre-populated  
+      - ./profiles/pingdataconsole:/opt/in:ro  # Mount the profile for PDC so that LDAP Server pre-populated  
     networks:
       - proxy
 
@@ -153,6 +153,8 @@ services:
       - CLUSTER_NAME=pf
       - DNS_QUERY_LOCATION=pingfederate-admin,pingfederate
       - DNS_RECORD_TYPE=A
+      - TAIL_LOG_FILES="/opt/out/instance/log/server.log /opt/out/instance/log/init.log /opt/out/instance/log/admin.log"
+
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.pingfederate-admin.entrypoints=https"

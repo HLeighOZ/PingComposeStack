@@ -1,19 +1,23 @@
 # PingComposeStack
 
+>[!NOTE]
+> Check out the [Wiki](../../wiki) for details of the configuration and deployment of this Solution
+
 ## Repo Structure
 ```
-
-├── docker-compose.yaml  # Key Compose file used to deploy solution
-├── .env   # Global ENV VAR definitions
+├── docker-compose.yaml
+├── LICENSE
 ├── ping
-│   ├── devops-crds.env  # Ping DEVOPS Credentials obtained from Registration email via [Ping Identity Devops Registration](https://developer.pingidentity.com/devops/how-to/devopsRegistration.html#)
-├── profiles             # Local Product Profiles with Solution configurations   
+│   └── devops-crds.env
+├── profiles
 │   ├── pingaccess
+│   ├── pingdataconsole
 │   ├── pingdirectory
 │   └── pingfederate
-├── traefik
-│   ├── acme.json
-│   ├── cf_api_token.txt
-│   ├── logs
-│   └── traefik.yml
+├── README.md
+└── traefik
+    ├── acme.json
+    ├── cf_api_token.txt
+    ├── logs
+    └── traefik.yml
 ```    

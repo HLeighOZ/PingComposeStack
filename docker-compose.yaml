@@ -93,7 +93,7 @@ services:
       - "traefik.http.services.pingdataconsole.loadbalancer.server.port=1443"
       - "traefik.http.services.pingdataconsole.loadbalancer.server.scheme=https"  
     volumes:
-      - ./profiles/pingdataconsole:/opt/in:ro  # Mount the profile for PDC so that LDAP Server pre-populated  
+      - ./profiles/pingdataconsole:/opt/in:ro  # Mount the profile for PDC so that LDAP Server & Creds pre-populated  
     networks:
       - proxy
 
